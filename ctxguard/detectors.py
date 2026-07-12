@@ -168,7 +168,7 @@ _PLACEHOLDER_SUBSTRINGS = (
     "****",
 )
 
-_PLACEHOLDER_WRAPPED = re.compile(r"^(<.*>|\$\{.*\}|\{\{.*\}\}|%.*%|__.*__|\[.*\])$")
+_PLACEHOLDER_WRAPPED = re.compile(r"^(<.*>|\$\{.*\}|\{.*\}|%.*%|__.*__|\[.*\]|\$\w+)$")
 
 
 def is_placeholder(value: str) -> bool:

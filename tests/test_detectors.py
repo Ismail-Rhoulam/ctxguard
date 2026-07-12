@@ -219,6 +219,8 @@ class TestDatabaseUrl:
             "postgres://user:password@localhost:5432/dev",
             "mysql://root:pass@127.0.0.1/x",
             "postgresql://u:${DB_PASSWORD}@h/db",
+            "postgres://u:{password}@h/db",
+            "postgres://u:$PGPASSWORD@h/db",
             "postgres://user@localhost/db",
             "postgres://localhost:5432/db",
             "https://example.com/path",
