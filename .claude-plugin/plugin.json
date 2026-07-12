@@ -1,0 +1,20 @@
+{
+  "name": "ctxguard",
+  "version": "0.1.0",
+  "description": "Blocks secrets, credentials, and sensitive files before they enter an AI coding agent's context through Claude Code tool calls.",
+  "author": {
+    "name": "Ismail Rhoulam",
+    "email": "rhoulam.backup@gmail.com"
+  },
+  "homepage": "https://github.com/Ismail-Rhoulam/ctxguard",
+  "repository": "https://github.com/Ismail-Rhoulam/ctxguard",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "security",
+    "secrets",
+    "hooks",
+    "ai-agent-security",
+    "llm-security"
+  ]
+}

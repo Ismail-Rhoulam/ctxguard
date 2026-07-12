@@ -1,102 +1,189 @@
 # ctxguard
 
-**Your AI agent should never see your API keys. This makes sure it doesn't.**
+[![CI](https://github.com/Ismail-Rhoulam/ctxguard/actions/workflows/ci.yml/badge.svg)](https://github.com/Ismail-Rhoulam/ctxguard/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-ctxguard is a Claude Code plugin plus a standalone CLI that stops secrets, credentials, and sensitive files from entering the model's context window. It hooks Claude Code's `PreToolUse` event for `Read`, `Edit`, `Write`, `Bash`, `Grep`, and `Glob`, scans the target before the tool runs, and denies the call when it detects a likely secret. Claude gets a clear, masked explanation instead of your credentials.
+**Your AI coding agent should never see your API keys.**
 
-## 30-second install
+**ctxguard blocks secrets before they enter the model's context.**
 
-```bash
-pip install ctxguard && ctxguard init
+ctxguard is a local Claude Code plugin and standalone Python CLI. It intercepts
+sensitive tool calls before execution and returns a masked explanation instead
+of letting likely secrets, credentials, or sensitive files enter context.
+
+<!-- Add demo GIF here: docs/assets/ctxguard-demo.gif -->
+
+## 30-second installation
+
+### Claude Code plugin (no Python package install)
+
+Inside Claude Code, add this repository as a marketplace and install ctxguard:
+
+```text
+/plugin marketplace add Ismail-Rhoulam/ctxguard
+/plugin install ctxguard@ctxguard-plugins
+/reload-plugins
 ```
 
-`ctxguard init` writes a default `.ctxguard.toml` and registers the hooks in `.claude/settings.json` (it asks before touching an existing settings file). Start a new Claude Code session and you are protected.
+The plugin includes its own Python source. It requires `python3` 3.9 or newer
+on `PATH`, but does not require `pip install ctxguard`.
 
-Prefer the plugin route? Install this repo as a Claude Code plugin (see [Installing as a plugin](#installing-as-a-plugin)) and skip `init` entirely.
+For local development, run `claude --plugin-dir .` from this repository.
+
+### Standalone CLI
+
+```bash
+python3 -m pip install ctxguard
+ctxguard init
+```
+
+`ctxguard init` creates `.ctxguard.toml` if absent and registers CLI-backed
+hooks in `.claude/settings.json`. If that settings file already exists, ctxguard
+asks before modifying it; non-interactive use requires the explicit `--yes`
+flag. It merges entries and preserves unrelated settings.
+
+## Why ctxguard?
+
+| Tool | Primary protection |
+| --- | --- |
+| `.gitignore` | Prevents selected files from being committed |
+| Gitleaks / TruffleHog | Detects secrets in repositories and commits |
+| ctxguard | Blocks sensitive content before an AI coding agent reads it |
+
+ctxguard complements repository scanners; it does not replace them. Gitleaks
+and TruffleHog protect repository history and workflows. ctxguard addresses a
+different boundary: the agent tool call immediately before content enters the
+model context.
 
 ## How it works
 
-Claude Code hooks can allow, deny, or ask about a tool call. They cannot rewrite what a tool returns. ctxguard is therefore **block-and-report, not silent redaction**: when a tool call would pull a likely secret into context, the call is denied with exit code 2 and Claude receives a masked, human-readable reason it can act on (for example, suggesting you add the file to `.gitignore` or move the value to a secrets manager). Nothing is ever redacted in flight, and the raw secret value never appears in any output, log, or report; matches are always masked to the first 4 and last 2 characters.
+Claude Code hooks can allow or deny a tool call, but cannot rewrite its result.
+ctxguard is therefore **block-and-report, not silent redaction**:
 
-Three layers:
+1. A `PreToolUse` hook inspects `Read`, `Edit`, `Write`, `Bash`, `Grep`, and
+   `Glob` inputs before execution.
+2. Sensitive filenames, small text-file contents, common shell reads,
+   environment dumps, and inline high-confidence secrets are checked locally.
+3. In `block` mode, a flagged call is denied with a masked reason. In `warn`
+   mode, it is allowed with warning context.
+4. A capped `SessionStart` scan tells Claude which files to avoid without
+   returning their raw contents.
 
-1. **PreToolUse guard**: checks `Read`/`Edit`/`Write` file paths (by filename and, for small text files, by content), `Bash` commands (reads of sensitive files, environment dumps, and secret literals inline in the command), and `Grep`/`Glob` patterns that specifically target sensitive files.
-2. **SessionStart scan**: a fast, capped scan of the project at session start that injects a masked summary ("3 potential secrets in 2 files...") so Claude knows which files to avoid. It skips `.git`, gitignored files, binaries, and anything over 1 MB, and is budgeted to finish in well under a second.
-3. **Standalone CLI**: `ctxguard scan` audits a whole repo outside any session, with a pretty terminal report or `--json` for CI. Exit code 1 when findings exist, 0 when clean.
+The CLI uses the same detector module as both plugin hooks.
+
+### Example blocked tool call
+
+```text
+Claude Code attempts: Read .env
+ctxguard intercepts: PreToolUse
+Tool call result: DENIED
+Explanation: ctxguard blocked this Read call: .env is a sensitive file by name
+Raw values printed: no
+```
+
+Run the synthetic demonstration with `python3 scripts/demo.py`. See
+[docs/demo.md](docs/demo.md) for details and safe GIF-recording instructions.
 
 ## What it detects
 
 - AWS access key IDs and secret access keys
-- GitHub personal access tokens (classic and fine-grained)
-- Slack tokens (`xoxb-`, `xoxp-`, ...)
+- GitHub classic and fine-grained personal access tokens
+- Slack tokens
 - Stripe live and test secret keys
-- Private key blocks (`-----BEGIN ... PRIVATE KEY-----`)
-- JWT-shaped strings
-- `KEY=` / `TOKEN=` / `SECRET=` / `PASSWORD=` assignments with non-trivial values (length, digit, and entropy thresholds filter out placeholders like `TOKEN=your-key-here`)
-- High-entropy strings assigned to any variable whose name contains `key`, `secret`, `token`, `password`, or `credential`
-- Sensitive files by name alone, regardless of content: `.env`, `.env.*` (except `.env.example` and friends), `id_rsa`, `id_ed25519`, `*.pem`, `*.pfx`, `credentials.json`, `service-account*.json`, and similar
+- private key blocks and JWT-shaped strings
+- credential-like assignments that pass length, digit, and entropy thresholds
+- high-entropy values assigned to names containing `key`, `secret`, `token`,
+  `password`, or `credential`
+- sensitive filenames including `.env`, non-template `.env.*`, SSH keys,
+  `*.pem`, `*.pfx`, `credentials.json`, and `service-account*.json`
 
-Detection is pattern- and entropy-based, entirely local, with no network calls and no ML.
+Detection is heuristic and local. ctxguard makes no network calls and uses no
+telemetry or machine learning.
 
 ## Configuration
 
-Copy `.ctxguard.toml.example` to `.ctxguard.toml` in your project root (or let `ctxguard init` write one):
+Copy `.ctxguard.toml.example` to `.ctxguard.toml`, or run `ctxguard init`:
 
 ```toml
-# "block" denies flagged tool calls; "warn" allows them but injects a warning.
-mode = "block"
+mode = "block" # or "warn"
 
-# fnmatch patterns ctxguard should never flag (test fixtures, examples).
 allowlist = [
     "tests/fixtures/*",
 ]
 
-# Your own patterns, applied everywhere the built-ins are.
 [[custom_patterns]]
 name = "acme_internal_token"
 regex = "acme_[A-Za-z0-9]{32}"
 confidence = "high"
 ```
 
-## CLI usage
+Allowlisting suppresses detection and should be narrow. Custom regular
+expressions are applied alongside built-ins.
+
+## CLI
 
 ```bash
-ctxguard scan              # scan the current directory, pretty report
-ctxguard scan path/ --json # machine-readable, for CI (exit 1 if findings)
-ctxguard init              # write config + register hooks in .claude/settings.json
+ctxguard scan               # scan current directory; exit 1 on findings
+ctxguard scan path/ --json  # machine-readable masked report
+ctxguard init               # create config and register Claude Code hooks
 ctxguard --version
 ```
 
-## Installing as a plugin
-
-The repo is a self-contained Claude Code plugin: `plugin.json` plus `hooks/hooks.json` register the two hook scripts via `${CLAUDE_PLUGIN_ROOT}`, so no pip install is needed inside the plugin. Add it through Claude Code's plugin system (for example from a marketplace entry pointing at this repo), then verify with a new session: ask Claude to read a `.env` file and it should be denied with a ctxguard message, and `/hooks` should list both registrations.
-
 ## Honest limitations
 
-- Pattern and entropy matching cannot catch every secret format. A secret that looks like plain prose will slip through; an unusual but random-looking value might only be caught if its variable name suggests a credential. Treat ctxguard as a strong seatbelt, not a cryptographic guarantee.
-- ctxguard blocks tool calls; it does not redact. If a secret is already inside a file Claude legitimately reads (say, buried in an otherwise normal source file under the thresholds), it can still surface.
-- The Bash guard is heuristic. It catches common read patterns (`cat .env`, `env | grep ...`, secrets inline in commands), not every possible shell construction.
-- Hooks require `python3` on PATH (Python 3.9+; no third-party packages needed for the hooks themselves).
+- Pattern and entropy matching has false positives and false negatives. A
+  secret that resembles prose may pass; an unusual random value may be flagged.
+- ctxguard blocks calls; it cannot redact tool output in flight. If a detector
+  misses sensitive content in a normal-looking file, that content can enter
+  context.
+- The Bash parser is heuristic and cannot model every shell construction.
+- Filename checks intentionally deny some files without inspecting content.
+- Files over 1 MB and binary files are not content-scanned. Session scans are
+  time- and file-capped for responsiveness.
+- Hook errors fail open so ctxguard cannot break a Claude Code session. This
+  preserves availability but means a broken hook does not provide protection.
+- Native Windows compatibility is not claimed; current testing covers the
+  Python package and hook contract on Unix-like CI runners.
+
+Use layered controls: least-privilege credentials, a secrets manager,
+`.gitignore`, repository secret scanning, short-lived tokens, and revocation.
+
+## Security model
+
+ctxguard trusts the local Python runtime, Claude Code's hook execution, the
+installed plugin files, and project configuration. Detection and reporting stay
+on the local machine. Reports contain masked matches, filenames, categories,
+and line numbers, never intentionally the full matched value.
+
+An attacker who can alter the plugin, configuration, interpreter, hook input,
+or files between inspection and execution may bypass it. ctxguard is a
+preventive guardrail, not a sandbox, secrets manager, or formal non-disclosure
+guarantee. See [SECURITY.md](SECURITY.md) for private reporting guidance.
 
 ## Development
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest
+.venv/bin/python -m build
+.venv/bin/twine check dist/*
 ```
 
-Scanning this repo with ctxguard flags the files under `tests/fixtures/`: that is expected, they exist to be found.
+Test the plugin locally with `claude plugin validate .` and
+`claude --plugin-dir .`. Fixtures containing detector-positive synthetic values
+are confined to `tests/fixtures/` and allowlisted by the repository example
+configuration.
 
 ## Contributing
 
-Issues and PRs welcome. Useful contributions, roughly in order of impact:
-
-- New detector patterns (add the regex to `ctxguard/detectors.py` **with both a positive and a negative fixture** and tests for each)
-- False-positive reports: real-world values that got flagged and should not be
-- A `--fix` mode that appends flagged files to `.gitignore`
-
-Keep detection logic in `ctxguard/detectors.py` only; the hooks and the CLI both import from there. Run the full test suite before submitting.
+Issues and pull requests are welcome. Detector changes must include positive
+and negative tests, and outputs must never reveal an unmasked match. Keep the
+project local, dependency-light, auditable, and honest about limitations. Run
+the complete test suite before submitting. See [SECURITY.md](SECURITY.md) for
+security reports rather than opening a public bypass report.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
