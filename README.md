@@ -91,6 +91,14 @@ Run the synthetic demonstration with `python3 scripts/demo.py`. See
 - GitHub classic and fine-grained personal access tokens
 - Slack tokens
 - Stripe live and test secret keys
+- GCP API keys (`AIza...`) and service-account JSON (content marker plus the filename rule)
+- Azure storage, Service Bus, Event Hub, and IoT Hub connection string keys
+  (`AccountKey=...`, `SharedAccessKey=...`)
+- Twilio API key SIDs and SendGrid API keys
+- OpenAI-style keys (`sk-...`, `sk-proj-...`) and Anthropic keys (`sk-ant-...`)
+- Database URLs with inline passwords: Postgres, MySQL/MariaDB (including
+  SQLAlchemy dialect+driver and Rails `mysql2://` schemes), MongoDB, Redis,
+  AMQP, and MSSQL
 - private key blocks and JWT-shaped strings
 - credential-like assignments that pass length, digit, and entropy thresholds
 - high-entropy values assigned to names containing `key`, `secret`, `token`,

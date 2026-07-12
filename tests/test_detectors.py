@@ -124,6 +124,110 @@ class TestJwt:
         assert det.scan_text("eyJhbGciOiJIUzI1NiJ9") == []
 
 
+class TestGcp:
+    def test_api_key_positive(self):
+        findings = det.scan_text(f"maps key {GCP_API_VAL}\n")
+        assert names(findings) == ["gcp_api_key"]
+
+    def test_api_key_placeholder_negative(self):
+        assert det.scan_text("AIza" + "X" * 35) == []
+
+    def test_service_account_marker_positive(self):
+        marker = '"type": ' + '"service_account"'
+        assert names(det.scan_text(marker)) == ["gcp_service_account"]
+
+    def test_service_account_other_type_negative(self):
+        assert det.scan_text('"type": "authorized_user_config"') == []
+
+
+class TestAzure:
+    def test_connection_string_positive(self):
+        text = f"DefaultEndpointsProtocol=https;AccountKey={AZURE_ACCOUNT_VAL};x=y"
+        findings = det.scan_text(text)
+        assert names(findings) == ["azure_storage_account_key"]
+        assert AZURE_ACCOUNT_VAL not in str(findings[0])
+
+    def test_low_entropy_negative(self):
+        assert det.scan_text("AccountKey=" + "A" * 70) == []
+
+
+class TestTwilio:
+    def test_positive(self):
+        assert names(det.scan_text(f"sid {TWILIO_VAL}\n")) == ["twilio_api_key"]
+
+    def test_zeroed_negative(self):
+        assert det.scan_text("SK" + "0" * 32) == []
+
+    def test_too_short_negative(self):
+        assert det.scan_text("SKa1b2c3") == []
+
+
+class TestSendGrid:
+    def test_positive(self):
+        assert names(det.scan_text(SENDGRID_VAL)) == ["sendgrid_api_key"]
+
+    def test_placeholder_negative(self):
+        fake = "SG." + "X" * 22 + "." + "X" * 43
+        assert det.scan_text(fake) == []
+
+    def test_wrong_shape_negative(self):
+        assert det.scan_text("SG.short.token") == []
+
+
+class TestOpenAiStyle:
+    def test_classic_positive(self):
+        assert names(det.scan_text(OPENAI_VAL)) == ["openai_api_key"]
+
+    def test_project_key_positive(self):
+        proj = "sk-proj-" + OPENAI_VAL[3:]
+        assert names(det.scan_text(proj)) == ["openai_api_key"]
+
+    def test_anthropic_positive(self):
+        assert names(det.scan_text(ANTHROPIC_VAL)) == ["anthropic_api_key"]
+
+    def test_placeholder_negative(self):
+        assert det.scan_text("sk-" + "x" * 48) == []
+
+    def test_too_short_negative(self):
+        assert det.scan_text("sk-abc123") == []
+
+
+class TestDatabaseUrl:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgres://svc:{pw}@db.internal:5432/app",
+            "postgresql://svc:{pw}@db/app",
+            "mysql://app:{pw}@10.0.0.5/x",
+            "mongodb+srv://appuser:{pw}@cluster0.example.net/prod",
+            "redis://default:{pw}@cache:6379/0",
+            "amqp://worker:{pw}@mq:5672/vhost",
+        ],
+    )
+    def test_inline_password_positive(self, url):
+        findings = det.scan_text(url.format(pw=PG_URL_PW))
+        assert names(findings) == ["database_url_password"]
+        assert PG_URL_PW not in str(findings[0])
+
+    def test_mongo_positive(self):
+        url = f"mongodb://svc:{MONGO_URL_PW}@db/x"
+        assert names(det.scan_text(url)) == ["database_url_password"]
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgres://user:password@localhost:5432/dev",
+            "mysql://root:pass@127.0.0.1/x",
+            "postgresql://u:${DB_PASSWORD}@h/db",
+            "postgres://user@localhost/db",
+            "postgres://localhost:5432/db",
+            "https://example.com/path",
+        ],
+    )
+    def test_placeholder_or_no_password_negative(self, url):
+        assert det.scan_text(url) == []
+
+
 class TestEnvAssignment:
     def test_positive(self):
         findings = det.scan_text(f"DB_PASSWORD={DB_PASSWORD_VAL}\n")
