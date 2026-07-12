@@ -153,6 +153,19 @@ ctxguard --version
   preserves availability but means a broken hook does not provide protection.
 - Native Windows compatibility is not claimed; current testing covers the
   Python package and hook contract on Unix-like CI runners.
+- Any non-placeholder password inline in a database URL is flagged, including
+  weak or "demo" ones (`hunter2`, `letmein123`). This is intentional: a weak
+  credential is still a working credential, and ctxguard can't judge which
+  ones are safe to expose. Allowlist known-safe fixtures in `.ctxguard.toml`
+  instead.
+- GCP `AIza...`-style API keys are flagged even though some (notably Firebase
+  web config keys) are designed to be usable client-side. Restrict such keys
+  by API and referrer in the Google Cloud Console rather than relying on
+  ctxguard to tell intent apart; allowlist the specific file if it's noisy.
+- A handful of well-known, publicly documented development constants (e.g.
+  the Azurite/Azure Storage Emulator default key) are excluded by name since
+  they're identical on every machine and not secrets. This list is small and
+  only grows for equally unambiguous cases.
 
 Use layered controls: least-privilege credentials, a secrets manager,
 `.gitignore`, repository secret scanning, short-lived tokens, and revocation.

@@ -170,10 +170,24 @@ _PLACEHOLDER_SUBSTRINGS = (
 
 _PLACEHOLDER_WRAPPED = re.compile(r"^(<.*>|\$\{.*\}|\{.*\}|%.*%|__.*__|\[.*\]|\$\w+)$")
 
+# Well-known, publicly documented development keys that are constant across
+# every install and are not secrets. Checked from is_placeholder() so every
+# detector (not just the one whose regex happens to capture them) rejects
+# them consistently, regardless of which pattern matches the surrounding text.
+_KNOWN_BENIGN_VALUES = {
+    # Azurite / Azure Storage Emulator default account key (Microsoft docs)
+    (
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+        "K1SZFPTOtr/KBHBeksoGMGw=="
+    ).lower(),
+}
+
 
 def is_placeholder(value: str) -> bool:
     v = value.strip().strip("\"'").lower()
     if not v or v in _PLACEHOLDER_EXACT:
+        return True
+    if v in _KNOWN_BENIGN_VALUES:
         return True
     if _PLACEHOLDER_WRAPPED.match(v):
         return True
@@ -222,11 +236,28 @@ def _plausible_env_value(value: str, m: "re.Match") -> bool:
 
 
 def _plausible_db_password(value: str, m: "re.Match") -> bool:
-    # any real inline password in a connection URL is worth flagging; only
-    # obvious docs placeholders (user:password@, user:pass@, ${VAR}) get a pass
+    # any real inline password in a connection URL is worth flagging, even a
+    # weak one: the point is that no credential (strong or not) belongs
+    # inline in a URL that might enter an AI's context. only obvious docs
+    # placeholders (user:password@, user:pass@, ${VAR}) get a pass.
     if is_placeholder(value):
         return False
     return shannon_entropy(value) >= 2.0
+
+
+def _plausible_azure_key(value: str, m: "re.Match") -> bool:
+    if is_placeholder(value):
+        return False
+    return _plausible_token(value, m)
+
+
+def _plausible_gcp_service_account(value: str, m: "re.Match") -> bool:
+    # the bare service-account type marker alone also appears in docs and
+    # example snippets; require a private key nearby, which every real GCP
+    # service-account credential file has right next to it.
+    text = m.string
+    window = text[max(0, m.start() - 2000) : m.start() + 4000]
+    return "private_key" in window
 
 
 def _high_entropy_value(value: str, m: "re.Match") -> bool:
@@ -308,14 +339,14 @@ _BUILTIN_SPECS = [
         re.compile(r"[\"']type[\"']\s*:\s*[\"']service_account[\"']"),
         "high",
         0,
-        None,
+        _plausible_gcp_service_account,
     ),
     _Spec(
         "azure_storage_account_key",
-        re.compile(r"(?i)\bAccountKey=([A-Za-z0-9+/]{60,}={0,2})"),
+        re.compile(r"(?i)\b(?:Account|SharedAccess)Key=([A-Za-z0-9+/]{40,}={0,2})"),
         "high",
         1,
-        _plausible_token,
+        _plausible_azure_key,
     ),
     _Spec(
         "twilio_api_key",
@@ -351,8 +382,8 @@ _BUILTIN_SPECS = [
     _Spec(
         "database_url_password",
         re.compile(
-            r"(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?"
-            r"|amqps?|mssql)://[^\s:@/]+:([^\s:@/]{4,})@"
+            r"(?i)\b(?:postgres(?:ql)?|mysql2?|mariadb|mongodb(?:\+srv)?|rediss?"
+            r"|amqps?|mssql)(?:\+[a-z0-9_]+)?://[^\s:@/]*:([^\s:@/]{4,})@"
         ),
         "high",
         1,

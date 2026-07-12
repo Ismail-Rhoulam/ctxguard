@@ -133,11 +133,29 @@ class TestGcp:
         assert det.scan_text("AIza" + "X" * 35) == []
 
     def test_service_account_marker_positive(self):
-        marker = '"type": ' + '"service_account"'
+        # the bare marker alone is no longer sufficient (see
+        # test_marker_without_private_key_negative below); a real service
+        # account file always carries private_key right alongside it.
+        # Built via concatenation so this test file's own self-scan stays
+        # clean (same convention as the RAW_SECRETS constants in conftest.py).
+        marker = '"type": "service' + '_account", "private' + '_key_id": "abc123def456"'
         assert names(det.scan_text(marker)) == ["gcp_service_account"]
 
     def test_service_account_other_type_negative(self):
         assert det.scan_text('"type": "authorized_user_config"') == []
+
+    def test_marker_without_private_key_negative(self):
+        # bare type marker in docs/example snippets, no key material nearby
+        assert (
+            det.scan_text('{"type": "service' + '_account", "project_id": "x"}') == []
+        )
+
+    def test_marker_with_private_key_positive(self):
+        text = (
+            '{"type": "service' + '_account", "private' + '_key_id": "abc", '
+            '"private' + '_key": "not-a-real-pem-block"}'
+        )
+        assert "gcp_service_account" in names(det.scan_text(text))
 
 
 class TestAzure:
@@ -149,6 +167,35 @@ class TestAzure:
 
     def test_low_entropy_negative(self):
         assert det.scan_text("AccountKey=" + "A" * 70) == []
+
+    def test_shared_access_key_positive(self):
+        # Service Bus / Event Hubs / IoT Hub connection strings use
+        # SharedAccessKey=, not AccountKey=. Variable named to avoid tripping
+        # this file's own env_assignment detector on `<secretive-name> = "..."`.
+        sas_value = "nQx8VmPz4KtY2bWd7RjLq3hF6sN9vC1xB4mZ8kQz="
+        text = (
+            "Endpoint=sb://ns.servicebus.windows.net/;"
+            "SharedAccessKeyName=RootManageSharedAccessKey;"
+            f"SharedAccessKey={sas_value}"
+        )
+        findings = det.scan_text(text)
+        assert names(findings) == ["azure_storage_account_key"]
+        assert sas_value not in str(findings[0])
+
+    def test_well_known_azurite_dev_key_negative(self):
+        # the public, constant Azurite/Storage-Emulator default key is not a
+        # secret; must be excluded everywhere, not just from this detector,
+        # since "AccountKey" also matches the generic env_assignment name filter
+        azurite_key = (
+            "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+            "K1SZFPTOtr/KBHBeksoGMGw=="
+        )
+        assert det.scan_text(f"AccountKey={azurite_key}") == []
+        conn_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey={azurite_key};"
+        )
+        assert det.scan_text(conn_string) == []
 
 
 class TestTwilio:
@@ -202,6 +249,18 @@ class TestDatabaseUrl:
             "mongodb+srv://appuser:{pw}@cluster0.example.net/prod",
             "redis://default:{pw}@cache:6379/0",
             "amqp://worker:{pw}@mq:5672/vhost",
+            # SQLAlchemy dialect+driver URLs (default form in every
+            # Python/SQLAlchemy/Alembic config)
+            "postgresql+psycopg2://svc:{pw}@db.internal/app",
+            "postgresql+asyncpg://svc:{pw}@db/app",
+            "mysql+pymysql://svc:{pw}@db/app",
+            "mssql+pyodbc://svc:{pw}@db/app",
+            # Rails' DATABASE_URL scheme for MySQL
+            "mysql2://svc:{pw}@10.0.0.5/appdb",
+            # canonical empty-username Redis/Mongo auth URLs
+            "redis://:{pw}@cache.internal:6379/0",
+            "rediss://:{pw}@cache/0",
+            "mongodb://:{pw}@db/x",
         ],
     )
     def test_inline_password_positive(self, url):
@@ -224,6 +283,8 @@ class TestDatabaseUrl:
             "postgres://user@localhost/db",
             "postgres://localhost:5432/db",
             "https://example.com/path",
+            "postgres://:password@host/db",
+            "redis://:changeme@host/db",
         ],
     )
     def test_placeholder_or_no_password_negative(self, url):
