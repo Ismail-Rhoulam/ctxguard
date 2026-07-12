@@ -1,0 +1,20 @@
+# ctxguard configuration (copy to .ctxguard.toml in your project root)
+
+# "block": deny tool calls that would pull a secret into context (default).
+# "warn":  allow the call, but log it and inject a warning into context.
+mode = "block"
+
+# Paths or fnmatch patterns ctxguard should never flag.
+# Matched against the path relative to this file, the absolute path,
+# and the bare filename.
+allowlist = [
+    "tests/fixtures/*",
+    # "docs/examples/*",
+]
+
+# User-supplied detection patterns (regex, applied line by line to file
+# contents, Bash commands included). confidence: high | medium | low.
+[[custom_patterns]]
+name = "acme_internal_token"
+regex = "acme_[A-Za-z0-9]{32}"
+confidence = "high"

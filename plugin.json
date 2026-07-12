@@ -1,0 +1,12 @@
+{
+  "name": "ctxguard",
+  "description": "Blocks secrets, credentials, and sensitive files from entering Claude's context window: PreToolUse guard for Read/Edit/Write/Bash/Grep/Glob plus a SessionStart repo scan.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Your Name",
+    "email": "you@example.com"
+  },
+  "homepage": "https://github.com/irhoulam/ctxguard",
+  "license": "MIT",
+  "keywords": ["security", "secrets", "hooks", "context"]
+}
