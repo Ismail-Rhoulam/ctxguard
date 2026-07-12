@@ -3,20 +3,28 @@
 import pytest
 
 from conftest import (
+    ANTHROPIC_VAL,
     AWS_ID,
     AWS_SECRET,
+    AZURE_ACCOUNT_VAL,
     CLEAN_DIR,
     DB_PASSWORD_VAL,
     ENTROPY_VAL,
     EXPECTED_SECRET_FINDINGS,
+    GCP_API_VAL,
     GH_PAT,
     GHP,
     JWT,
+    MONGO_URL_PW,
+    OPENAI_VAL,
+    PG_URL_PW,
     RAW_SECRETS,
     SECRETS_DIR,
+    SENDGRID_VAL,
     SLACK,
     STRIPE_LIVE,
     STRIPE_TEST,
+    TWILIO_VAL,
 )
 from ctxguard import detectors as det
 
@@ -114,6 +122,173 @@ class TestJwt:
 
     def test_header_only_negative(self):
         assert det.scan_text("eyJhbGciOiJIUzI1NiJ9") == []
+
+
+class TestGcp:
+    def test_api_key_positive(self):
+        findings = det.scan_text(f"maps key {GCP_API_VAL}\n")
+        assert names(findings) == ["gcp_api_key"]
+
+    def test_api_key_placeholder_negative(self):
+        assert det.scan_text("AIza" + "X" * 35) == []
+
+    def test_service_account_marker_positive(self):
+        # the bare marker alone is no longer sufficient (see
+        # test_marker_without_private_key_negative below); a real service
+        # account file always carries private_key right alongside it.
+        # Built via concatenation so this test file's own self-scan stays
+        # clean (same convention as the RAW_SECRETS constants in conftest.py).
+        marker = '"type": "service' + '_account", "private' + '_key_id": "abc123def456"'
+        assert names(det.scan_text(marker)) == ["gcp_service_account"]
+
+    def test_service_account_other_type_negative(self):
+        assert det.scan_text('"type": "authorized_user_config"') == []
+
+    def test_marker_without_private_key_negative(self):
+        # bare type marker in docs/example snippets, no key material nearby
+        assert (
+            det.scan_text('{"type": "service' + '_account", "project_id": "x"}') == []
+        )
+
+    def test_marker_with_private_key_positive(self):
+        text = (
+            '{"type": "service' + '_account", "private' + '_key_id": "abc", '
+            '"private' + '_key": "not-a-real-pem-block"}'
+        )
+        assert "gcp_service_account" in names(det.scan_text(text))
+
+
+class TestAzure:
+    def test_connection_string_positive(self):
+        text = f"DefaultEndpointsProtocol=https;AccountKey={AZURE_ACCOUNT_VAL};x=y"
+        findings = det.scan_text(text)
+        assert names(findings) == ["azure_storage_account_key"]
+        assert AZURE_ACCOUNT_VAL not in str(findings[0])
+
+    def test_low_entropy_negative(self):
+        assert det.scan_text("AccountKey=" + "A" * 70) == []
+
+    def test_shared_access_key_positive(self):
+        # Service Bus / Event Hubs / IoT Hub connection strings use
+        # SharedAccessKey=, not AccountKey=. Variable named to avoid tripping
+        # this file's own env_assignment detector on `<secretive-name> = "..."`.
+        sas_value = "nQx8VmPz4KtY2bWd7RjLq3hF6sN9vC1xB4mZ8kQz="
+        text = (
+            "Endpoint=sb://ns.servicebus.windows.net/;"
+            "SharedAccessKeyName=RootManageSharedAccessKey;"
+            f"SharedAccessKey={sas_value}"
+        )
+        findings = det.scan_text(text)
+        assert names(findings) == ["azure_storage_account_key"]
+        assert sas_value not in str(findings[0])
+
+    def test_well_known_azurite_dev_key_negative(self):
+        # the public, constant Azurite/Storage-Emulator default key is not a
+        # secret; must be excluded everywhere, not just from this detector,
+        # since "AccountKey" also matches the generic env_assignment name filter
+        azurite_key = (
+            "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+            "K1SZFPTOtr/KBHBeksoGMGw=="
+        )
+        assert det.scan_text(f"AccountKey={azurite_key}") == []
+        conn_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey={azurite_key};"
+        )
+        assert det.scan_text(conn_string) == []
+
+
+class TestTwilio:
+    def test_positive(self):
+        assert names(det.scan_text(f"sid {TWILIO_VAL}\n")) == ["twilio_api_key"]
+
+    def test_zeroed_negative(self):
+        assert det.scan_text("SK" + "0" * 32) == []
+
+    def test_too_short_negative(self):
+        assert det.scan_text("SKa1b2c3") == []
+
+
+class TestSendGrid:
+    def test_positive(self):
+        assert names(det.scan_text(SENDGRID_VAL)) == ["sendgrid_api_key"]
+
+    def test_placeholder_negative(self):
+        fake = "SG." + "X" * 22 + "." + "X" * 43
+        assert det.scan_text(fake) == []
+
+    def test_wrong_shape_negative(self):
+        assert det.scan_text("SG.short.token") == []
+
+
+class TestOpenAiStyle:
+    def test_classic_positive(self):
+        assert names(det.scan_text(OPENAI_VAL)) == ["openai_api_key"]
+
+    def test_project_key_positive(self):
+        proj = "sk-proj-" + OPENAI_VAL[3:]
+        assert names(det.scan_text(proj)) == ["openai_api_key"]
+
+    def test_anthropic_positive(self):
+        assert names(det.scan_text(ANTHROPIC_VAL)) == ["anthropic_api_key"]
+
+    def test_placeholder_negative(self):
+        assert det.scan_text("sk-" + "x" * 48) == []
+
+    def test_too_short_negative(self):
+        assert det.scan_text("sk-abc123") == []
+
+
+class TestDatabaseUrl:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgres://svc:{pw}@db.internal:5432/app",
+            "postgresql://svc:{pw}@db/app",
+            "mysql://app:{pw}@10.0.0.5/x",
+            "mongodb+srv://appuser:{pw}@cluster0.example.net/prod",
+            "redis://default:{pw}@cache:6379/0",
+            "amqp://worker:{pw}@mq:5672/vhost",
+            # SQLAlchemy dialect+driver URLs (default form in every
+            # Python/SQLAlchemy/Alembic config)
+            "postgresql+psycopg2://svc:{pw}@db.internal/app",
+            "postgresql+asyncpg://svc:{pw}@db/app",
+            "mysql+pymysql://svc:{pw}@db/app",
+            "mssql+pyodbc://svc:{pw}@db/app",
+            # Rails' DATABASE_URL scheme for MySQL
+            "mysql2://svc:{pw}@10.0.0.5/appdb",
+            # canonical empty-username Redis/Mongo auth URLs
+            "redis://:{pw}@cache.internal:6379/0",
+            "rediss://:{pw}@cache/0",
+            "mongodb://:{pw}@db/x",
+        ],
+    )
+    def test_inline_password_positive(self, url):
+        findings = det.scan_text(url.format(pw=PG_URL_PW))
+        assert names(findings) == ["database_url_password"]
+        assert PG_URL_PW not in str(findings[0])
+
+    def test_mongo_positive(self):
+        url = f"mongodb://svc:{MONGO_URL_PW}@db/x"
+        assert names(det.scan_text(url)) == ["database_url_password"]
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgres://user:password@localhost:5432/dev",
+            "mysql://root:pass@127.0.0.1/x",
+            "postgresql://u:${DB_PASSWORD}@h/db",
+            "postgres://u:{password}@h/db",
+            "postgres://u:$PGPASSWORD@h/db",
+            "postgres://user@localhost/db",
+            "postgres://localhost:5432/db",
+            "https://example.com/path",
+            "postgres://:password@host/db",
+            "redis://:changeme@host/db",
+        ],
+    )
+    def test_placeholder_or_no_password_negative(self, url):
+        assert det.scan_text(url) == []
 
 
 class TestEnvAssignment:

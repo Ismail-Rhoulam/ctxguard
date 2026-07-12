@@ -142,6 +142,11 @@ _PLACEHOLDER_EXACT = {
     "unset",
     "disabled",
     "string",
+    "pass",
+    "pwd",
+    "1234",
+    "12345",
+    "123456",
 }
 
 _PLACEHOLDER_SUBSTRINGS = (
@@ -163,12 +168,26 @@ _PLACEHOLDER_SUBSTRINGS = (
     "****",
 )
 
-_PLACEHOLDER_WRAPPED = re.compile(r"^(<.*>|\$\{.*\}|\{\{.*\}\}|%.*%|__.*__|\[.*\])$")
+_PLACEHOLDER_WRAPPED = re.compile(r"^(<.*>|\$\{.*\}|\{.*\}|%.*%|__.*__|\[.*\]|\$\w+)$")
+
+# Well-known, publicly documented development keys that are constant across
+# every install and are not secrets. Checked from is_placeholder() so every
+# detector (not just the one whose regex happens to capture them) rejects
+# them consistently, regardless of which pattern matches the surrounding text.
+_KNOWN_BENIGN_VALUES = {
+    # Azurite / Azure Storage Emulator default account key (Microsoft docs)
+    (
+        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+        "K1SZFPTOtr/KBHBeksoGMGw=="
+    ).lower(),
+}
 
 
 def is_placeholder(value: str) -> bool:
     v = value.strip().strip("\"'").lower()
     if not v or v in _PLACEHOLDER_EXACT:
+        return True
+    if v in _KNOWN_BENIGN_VALUES:
         return True
     if _PLACEHOLDER_WRAPPED.match(v):
         return True
@@ -214,6 +233,31 @@ def _plausible_env_value(value: str, m: "re.Match") -> bool:
     if not any(c.isdigit() for c in v):
         return False  # header names, enum-ish values; real secrets have digits
     return shannon_entropy(v) >= 3.0
+
+
+def _plausible_db_password(value: str, m: "re.Match") -> bool:
+    # any real inline password in a connection URL is worth flagging, even a
+    # weak one: the point is that no credential (strong or not) belongs
+    # inline in a URL that might enter an AI's context. only obvious docs
+    # placeholders (user:password@, user:pass@, ${VAR}) get a pass.
+    if is_placeholder(value):
+        return False
+    return shannon_entropy(value) >= 2.0
+
+
+def _plausible_azure_key(value: str, m: "re.Match") -> bool:
+    if is_placeholder(value):
+        return False
+    return _plausible_token(value, m)
+
+
+def _plausible_gcp_service_account(value: str, m: "re.Match") -> bool:
+    # the bare service-account type marker alone also appears in docs and
+    # example snippets; require a private key nearby, which every real GCP
+    # service-account credential file has right next to it.
+    text = m.string
+    window = text[max(0, m.start() - 2000) : m.start() + 4000]
+    return "private_key" in window
 
 
 def _high_entropy_value(value: str, m: "re.Match") -> bool:
@@ -282,6 +326,68 @@ _BUILTIN_SPECS = [
         "high",
         1,
         _plausible_token,
+    ),
+    _Spec(
+        "gcp_api_key",
+        re.compile(r"\b(AIza[0-9A-Za-z_\-]{35})(?![0-9A-Za-z_\-])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "gcp_service_account",
+        re.compile(r"[\"']type[\"']\s*:\s*[\"']service_account[\"']"),
+        "high",
+        0,
+        _plausible_gcp_service_account,
+    ),
+    _Spec(
+        "azure_storage_account_key",
+        re.compile(r"(?i)\b(?:Account|SharedAccess)Key=([A-Za-z0-9+/]{40,}={0,2})"),
+        "high",
+        1,
+        _plausible_azure_key,
+    ),
+    _Spec(
+        "twilio_api_key",
+        re.compile(r"\b(SK[0-9a-fA-F]{32})(?![0-9a-fA-F])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "sendgrid_api_key",
+        re.compile(r"\b(SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43})(?![A-Za-z0-9_\-])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "anthropic_api_key",
+        re.compile(r"\b(sk-ant-[A-Za-z0-9_\-]{32,})\b"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "openai_api_key",
+        re.compile(
+            r"\b(sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{32,}"
+            r"|sk-[A-Za-z0-9]{48}(?![A-Za-z0-9]))"
+        ),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "database_url_password",
+        re.compile(
+            r"(?i)\b(?:postgres(?:ql)?|mysql2?|mariadb|mongodb(?:\+srv)?|rediss?"
+            r"|amqps?|mssql)(?:\+[a-z0-9_]+)?://[^\s:@/]*:([^\s:@/]{4,})@"
+        ),
+        "high",
+        1,
+        _plausible_db_password,
     ),
     _Spec(
         "private_key_block",

@@ -91,6 +91,14 @@ Run the synthetic demonstration with `python3 scripts/demo.py`. See
 - GitHub classic and fine-grained personal access tokens
 - Slack tokens
 - Stripe live and test secret keys
+- GCP API keys (`AIza...`) and service-account JSON (content marker plus the filename rule)
+- Azure storage, Service Bus, Event Hub, and IoT Hub connection string keys
+  (`AccountKey=...`, `SharedAccessKey=...`)
+- Twilio API key SIDs and SendGrid API keys
+- OpenAI-style keys (`sk-...`, `sk-proj-...`) and Anthropic keys (`sk-ant-...`)
+- Database URLs with inline passwords: Postgres, MySQL/MariaDB (including
+  SQLAlchemy dialect+driver and Rails `mysql2://` schemes), MongoDB, Redis,
+  AMQP, and MSSQL
 - private key blocks and JWT-shaped strings
 - credential-like assignments that pass length, digit, and entropy thresholds
 - high-entropy values assigned to names containing `key`, `secret`, `token`,
@@ -145,6 +153,19 @@ ctxguard --version
   preserves availability but means a broken hook does not provide protection.
 - Native Windows compatibility is not claimed; current testing covers the
   Python package and hook contract on Unix-like CI runners.
+- Any non-placeholder password inline in a database URL is flagged, including
+  weak or "demo" ones (`hunter2`, `letmein123`). This is intentional: a weak
+  credential is still a working credential, and ctxguard can't judge which
+  ones are safe to expose. Allowlist known-safe fixtures in `.ctxguard.toml`
+  instead.
+- GCP `AIza...`-style API keys are flagged even though some (notably Firebase
+  web config keys) are designed to be usable client-side. Restrict such keys
+  by API and referrer in the Google Cloud Console rather than relying on
+  ctxguard to tell intent apart; allowlist the specific file if it's noisy.
+- A handful of well-known, publicly documented development constants (e.g.
+  the Azurite/Azure Storage Emulator default key) are excluded by name since
+  they're identical on every machine and not secrets. This list is small and
+  only grows for equally unambiguous cases.
 
 Use layered controls: least-privilege credentials, a secrets manager,
 `.gitignore`, repository secret scanning, short-lived tokens, and revocation.
