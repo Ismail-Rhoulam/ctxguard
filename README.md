@@ -135,8 +135,17 @@ expressions are applied alongside built-ins.
 ctxguard scan               # scan current directory; exit 1 on findings
 ctxguard scan path/ --json  # machine-readable masked report
 ctxguard init               # create config and register Claude Code hooks
+ctxguard doctor             # verify PATH resolution and hook registration
 ctxguard --version
 ```
+
+`ctxguard doctor` checks that the `ctxguard` executable resolves on `PATH`
+(what the hooks registered by `ctxguard init` actually invoke), that the
+resolved binary's version matches the one running the check, that
+`.claude/settings.json` has both hooks registered with the expected matcher,
+that `.ctxguard.toml` parses if present, and does an end-to-end smoke test by
+actually invoking the `PreToolUse` hook once. Exits 1 if anything is broken
+(`--json` for scripting), 0 if warnings only or fully healthy.
 
 ## Honest limitations
 

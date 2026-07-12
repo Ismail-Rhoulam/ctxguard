@@ -1,6 +1,9 @@
-"""Tests for the ctxguard CLI: scan, init, --version, exit codes, masking."""
+"""Tests for the ctxguard CLI: scan, init, doctor, --version, exit codes, masking."""
 
 import json
+import os
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +16,16 @@ from conftest import (
 )
 from ctxguard import __version__
 from ctxguard.cli import main
+
+
+def run_json_doctor(capsys, path):
+    code = main(["doctor", str(path), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    return code, report
+
+
+def checks_by_name(report):
+    return {c["name"]: c for c in report["checks"]}
 
 
 def run_json_scan(capsys, path):
@@ -143,3 +156,112 @@ class TestInit:
 
     def test_init_on_missing_dir_exits_two(self, capsys):
         assert main(["init", "/nonexistent/definitely/not/here"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# doctor
+
+
+class TestDoctor:
+    def test_missing_dir_exits_two(self, capsys):
+        assert main(["doctor", "/nonexistent/definitely/not/here"]) == 2
+
+    def test_nothing_set_up_reports_failures(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("PATH", str(tmp_path))  # no ctxguard resolvable
+        code, report = run_json_doctor(capsys, tmp_path)
+        assert code == 1
+        assert report["healthy"] is False
+        checks = checks_by_name(report)
+        assert checks["path_resolution"]["status"] == "fail"
+        assert checks["settings_file"]["status"] == "fail"
+        assert checks["pretooluse_hook"]["status"] == "fail"
+        assert checks["sessionstart_hook"]["status"] == "fail"
+        assert checks["config_file"]["status"] == "warn"  # missing config is not fatal
+        # can't run a subprocess smoke test or version check without a resolvable binary
+        assert "version_match" not in checks
+        assert "hook_smoke_test" not in checks
+
+    def test_healthy_project_end_to_end(self, tmp_path, capsys, monkeypatch):
+        # prepend the dir containing the currently-running interpreter, which
+        # for a `pip install -e .` venv also contains the `ctxguard` console
+        # script, so this exercises the real PATH-resolved binary end to end
+        venv_bin = str(Path(sys.executable).parent)
+        monkeypatch.setenv("PATH", venv_bin + os.pathsep + os.defpath)
+        assert main(["init", str(tmp_path)]) == 0
+        capsys.readouterr()  # drain init's own stdout before capturing doctor's JSON
+
+        code, report = run_json_doctor(capsys, tmp_path)
+        assert code == 0
+        assert report["healthy"] is True
+        checks = checks_by_name(report)
+        assert checks["python_version"]["status"] == "ok"
+        assert checks["path_resolution"]["status"] == "ok"
+        assert checks["version_match"]["status"] == "ok"
+        assert checks["settings_file"]["status"] == "ok"
+        assert checks["pretooluse_hook"]["status"] == "ok"
+        assert checks["sessionstart_hook"]["status"] == "ok"
+        assert checks["config_file"]["status"] == "ok"
+        assert checks["hook_smoke_test"]["status"] == "ok"
+
+    def test_narrow_matcher_warns_but_not_fails(self, tmp_path, capsys, monkeypatch):
+        # resolvable PATH so path_resolution/version_match/smoke_test don't
+        # also fail and confound the "warn alone doesn't fail health" check
+        venv_bin = str(Path(sys.executable).parent)
+        monkeypatch.setenv("PATH", venv_bin + os.pathsep + os.defpath)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Bash",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "ctxguard hook pretooluse",
+                                    }
+                                ],
+                            }
+                        ],
+                        "SessionStart": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": "ctxguard hook session-start",
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        code, report = run_json_doctor(capsys, tmp_path)
+        checks = checks_by_name(report)
+        assert checks["pretooluse_hook"]["status"] == "warn"
+        assert "Bash" in checks["pretooluse_hook"]["detail"]
+        assert checks["sessionstart_hook"]["status"] == "ok"
+        # a warning alone does not fail the overall health check
+        assert report["healthy"] is True
+        assert code == 0
+
+    def test_malformed_config_fails(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("PATH", str(tmp_path))
+        (tmp_path / ".ctxguard.toml").write_text("mode = [broken", encoding="utf-8")
+        code, report = run_json_doctor(capsys, tmp_path)
+        checks = checks_by_name(report)
+        assert checks["config_file"]["status"] == "fail"
+        assert report["healthy"] is False
+        assert code == 1
+
+    def test_rich_report_renders(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("PATH", str(tmp_path))
+        code = main(["doctor", str(tmp_path)])
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "ctxguard doctor" in out
+        assert "not fully set up" in out
