@@ -1,0 +1,15 @@
+{
+  "name": "rhoulam",
+  "owner": {
+    "name": "Ismail Rhoulam"
+  },
+  "description": "Open-source software, tools, and experiments from rhoulam.org.",
+  "plugins": [
+    {
+      "name": "ctxguard",
+      "source": ".",
+      "version": "0.1.0",
+      "description": "Blocks secrets, credentials, and sensitive files before they enter an AI coding agent's context through Claude Code tool calls."
+    }
+  ]
+}

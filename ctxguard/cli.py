@@ -19,7 +19,7 @@ from . import __version__
 from . import detectors as det
 
 DEFAULT_TOML = """\
-# ctxguard configuration. See https://github.com/irhoulam/ctxguard
+# ctxguard configuration. See https://github.com/Ismail-Rhoulam/ctxguard
 # mode: "block" denies flagged tool calls; "warn" allows them but injects a warning.
 mode = "block"
 
