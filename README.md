@@ -21,8 +21,8 @@ of letting likely secrets, credentials, or sensitive files enter context.
 Inside Claude Code, add this repository as a marketplace and install ctxguard:
 
 ```text
-/plugin marketplace add Ismail-Rhoulam/ctxguard
-/plugin install ctxguard@ctxguard-plugins
+/plugin marketplace add Ismail-Rhoulam/rhoulam
+/plugin install ctxguard@rhoulam
 /reload-plugins
 ```
 

@@ -17,8 +17,8 @@ avoid. The plugin and CLI share the same pattern- and entropy-based detectors.
 ## Installation
 
 ```text
-/plugin marketplace add Ismail-Rhoulam/ctxguard
-/plugin install ctxguard@ctxguard-plugins
+/plugin marketplace add Ismail-Rhoulam/rhoulam
+/plugin install ctxguard@rhoulam
 /reload-plugins
 ```
 

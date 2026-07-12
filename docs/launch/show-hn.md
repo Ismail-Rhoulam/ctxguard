@@ -30,8 +30,8 @@ not a sandbox or secrets manager.
 To test it:
 
 ```text
-/plugin marketplace add Ismail-Rhoulam/ctxguard
-/plugin install ctxguard@ctxguard-plugins
+/plugin marketplace add Ismail-Rhoulam/rhoulam
+/plugin install ctxguard@rhoulam
 ```
 
 Or clone the repository and run `python3 scripts/demo.py` for a synthetic demo.

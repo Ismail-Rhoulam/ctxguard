@@ -14,8 +14,8 @@ masked; the raw match is not intentionally returned to Claude.
 Installation in Claude Code:
 
 ```text
-/plugin marketplace add Ismail-Rhoulam/ctxguard
-/plugin install ctxguard@ctxguard-plugins
+/plugin marketplace add Ismail-Rhoulam/rhoulam
+/plugin install ctxguard@rhoulam
 ```
 
 This is complementary to Gitleaks and TruffleHog. Those tools protect repos and
