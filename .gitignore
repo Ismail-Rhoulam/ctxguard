@@ -22,3 +22,5 @@ htmlcov/
 # ctxguard local config (the example ships instead)
 .ctxguard.toml
 
+# local task notes
+goal.md

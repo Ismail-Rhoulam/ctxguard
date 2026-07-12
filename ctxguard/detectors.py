@@ -142,6 +142,11 @@ _PLACEHOLDER_EXACT = {
     "unset",
     "disabled",
     "string",
+    "pass",
+    "pwd",
+    "1234",
+    "12345",
+    "123456",
 }
 
 _PLACEHOLDER_SUBSTRINGS = (
@@ -216,6 +221,14 @@ def _plausible_env_value(value: str, m: "re.Match") -> bool:
     return shannon_entropy(v) >= 3.0
 
 
+def _plausible_db_password(value: str, m: "re.Match") -> bool:
+    # any real inline password in a connection URL is worth flagging; only
+    # obvious docs placeholders (user:password@, user:pass@, ${VAR}) get a pass
+    if is_placeholder(value):
+        return False
+    return shannon_entropy(value) >= 2.0
+
+
 def _high_entropy_value(value: str, m: "re.Match") -> bool:
     v = value.strip()
     if len(v) < 16 or is_placeholder(v):
@@ -282,6 +295,68 @@ _BUILTIN_SPECS = [
         "high",
         1,
         _plausible_token,
+    ),
+    _Spec(
+        "gcp_api_key",
+        re.compile(r"\b(AIza[0-9A-Za-z_\-]{35})(?![0-9A-Za-z_\-])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "gcp_service_account",
+        re.compile(r"[\"']type[\"']\s*:\s*[\"']service_account[\"']"),
+        "high",
+        0,
+        None,
+    ),
+    _Spec(
+        "azure_storage_account_key",
+        re.compile(r"(?i)\bAccountKey=([A-Za-z0-9+/]{60,}={0,2})"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "twilio_api_key",
+        re.compile(r"\b(SK[0-9a-fA-F]{32})(?![0-9a-fA-F])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "sendgrid_api_key",
+        re.compile(r"\b(SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43})(?![A-Za-z0-9_\-])"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "anthropic_api_key",
+        re.compile(r"\b(sk-ant-[A-Za-z0-9_\-]{32,})\b"),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "openai_api_key",
+        re.compile(
+            r"\b(sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{32,}"
+            r"|sk-[A-Za-z0-9]{48}(?![A-Za-z0-9]))"
+        ),
+        "high",
+        1,
+        _plausible_token,
+    ),
+    _Spec(
+        "database_url_password",
+        re.compile(
+            r"(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?"
+            r"|amqps?|mssql)://[^\s:@/]+:([^\s:@/]{4,})@"
+        ),
+        "high",
+        1,
+        _plausible_db_password,
     ),
     _Spec(
         "private_key_block",

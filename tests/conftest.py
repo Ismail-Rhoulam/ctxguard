@@ -36,6 +36,20 @@ DB_PASSWORD_VAL = "q8Gz7p2X" + "v9rLw4Nt"
 API_TOKEN_VAL = "8fk2mZpQ7wR4" + "xV1bN6cY3sD5"
 STRIPE_KEY_VAL = "whsec_F8kL2mP9" + "qR4sT7vX1yZ3bC6d"
 
+GCP_API_VAL = "AIzaSyQ9w8E7r6T5y4U3i2" + "O1p0Q9w8E7r6T5y0k"
+AZURE_ACCOUNT_VAL = (
+    "aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uVwX1yZ2aB3cD4eF5g"
+    + "H6iJ7kL8mN9oP0qR1sT2uV3wX4yZ5aB6cD7eF8g=="
+)
+TWILIO_VAL = "SK9f8e7d6c5b4a3928" + "1706f5e4d3c2b1a0"
+SENDGRID_VAL = (
+    "SG.aB1cD2eF3gH4iJ5kL6mN7o" + ".pQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lM9nO0pQ1r"
+)
+OPENAI_VAL = "sk-aB1cD2eF3gH4iJ5kL6mN7oP8" + "qR9sT0uV1wX2yZ3aB4cD5eF6"
+ANTHROPIC_VAL = "sk-ant-api03-qW3eR5tY7uI9oP1a" + "S2dF4gH6jK8lZ0xC5vB7nM9q"
+PG_URL_PW = "v8Kq2Lw9" + "Xt4z"
+MONGO_URL_PW = "Zp4tK9qX" + "2mR7w"
+
 RAW_SECRETS = [
     AWS_ID,
     AWS_SECRET,
@@ -49,11 +63,21 @@ RAW_SECRETS = [
     DB_PASSWORD_VAL,
     API_TOKEN_VAL,
     STRIPE_KEY_VAL,
+    GCP_API_VAL,
+    AZURE_ACCOUNT_VAL,
+    TWILIO_VAL,
+    SENDGRID_VAL,
+    OPENAI_VAL,
+    ANTHROPIC_VAL,
+    PG_URL_PW,
+    MONGO_URL_PW,
 ]
 
 # Expected totals when scanning tests/fixtures/secrets:
 #   aws.txt 2, github.txt 2, slack.txt 1, stripe.txt 2, keys.txt 1, jwt.txt 1,
 #   dotenv/.env 4 (1 filename + 3 env), settings.py 1,
-#   dummy.pem 1, credentials.json 1, id_rsa 1 (filename-only)
-EXPECTED_SECRET_FINDINGS = 17
-EXPECTED_FLAGGED_FILES = 11
+#   dummy.pem 1, credentials.json 1, id_rsa 1 (filename-only),
+#   gcp_sa.json 2 (type marker + private_key_id), cloud.txt 2 (gcp + azure),
+#   saas.txt 4 (twilio, sendgrid, openai, anthropic), dburls.txt 2
+EXPECTED_SECRET_FINDINGS = 27
+EXPECTED_FLAGGED_FILES = 15
